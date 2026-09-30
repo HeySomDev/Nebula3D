@@ -1,0 +1,101 @@
+import * as THREE from 'three';
+import { Engine } from '../engine/core/Engine';
+import { GameObject } from '../engine/core/GameObject';
+import { PrimitiveFactory } from '../engine/rendering/PrimitiveFactory';
+
+export class DemoGame {
+  private readonly engine: Engine;
+  private readonly player: GameObject;
+  private readonly platform: GameObject;
+
+  constructor(engine: Engine) {
+    this.engine = engine;
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    this.engine.scene.add(ambient);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(7, 12, 5);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    this.engine.scene.add(dirLight);
+
+    this.platform = new GameObject('Platform');
+    const ground = PrimitiveFactory.createPlane({ size: 24, color: 0x111827 });
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.platform.root.add(ground);
+
+    this.engine.scene.addGameObject(this.platform);
+
+    this.player = new GameObject('Player');
+    const box = PrimitiveFactory.createBox({ size: 1.2, color: 0x38bdf8 });
+    box.castShadow = true;
+    this.player.root.add(box);
+    this.player.root.position.set(0, 1.2, 0);
+    this.engine.scene.addGameObject(this.player);
+
+    this.engine.addUpdateHandler(this.update);
+  }
+
+  load(): void {
+    const hud = document.createElement('div');
+    hud.className = 'hud';
+    hud.innerHTML = `
+      <h1>Nebula3D</h1>
+      <p>Move with WASD • Orbit with mouse • Built for web 3D gameplay</p>
+    `;
+
+    this.engine.container.appendChild(hud);
+
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(42, 32, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0x0b1220,
+        side: THREE.BackSide,
+      }),
+    );
+
+    this.engine.scene.add(sky);
+
+    for (let i = 0; i < 18; i += 1) {
+      const crystal = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.32 + Math.random() * 0.28, 0),
+        new THREE.MeshStandardMaterial({
+          color: i % 2 === 0 ? 0xf59e0b : 0x8b5cf6,
+          emissive: i % 2 === 0 ? 0x5a2d00 : 0x210b46,
+          emissiveIntensity: 0.7,
+        }),
+      );
+
+      crystal.position.set(
+        (Math.random() - 0.5) * 16,
+        1 + Math.random() * 5,
+        (Math.random() - 0.5) * 16,
+      );
+
+      crystal.castShadow = true;
+      this.engine.scene.add(crystal);
+    }
+  }
+
+  private readonly update = (dt: number) => {
+    const moveSpeed = 4.5;
+    const direction = new THREE.Vector3();
+
+    if (this.engine.input.isDown('w')) direction.z -= 1;
+    if (this.engine.input.isDown('s')) direction.z += 1;
+    if (this.engine.input.isDown('a')) direction.x -= 1;
+    if (this.engine.input.isDown('d')) direction.x += 1;
+
+    if (direction.lengthSq() > 0) {
+      direction.normalize().multiplyScalar(moveSpeed * dt);
+      this.player.root.position.add(direction);
+    }
+
+    const maxRange = 8;
+    this.player.root.position.x = THREE.MathUtils.clamp(this.player.root.position.x, -maxRange, maxRange);
+    this.player.root.position.z = THREE.MathUtils.clamp(this.player.root.position.z, -maxRange, maxRange);
+    this.player.root.rotation.y += dt * 1.5;
+  };
+}
