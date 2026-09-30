@@ -19,4 +19,5 @@ engine.start();
 
 window.addEventListener('beforeunload', () => {
   engine.stop();
+  engine.dispose();
 });
