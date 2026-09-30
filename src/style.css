@@ -1,0 +1,245 @@
+import * as THREE from 'three';
+import { Engine } from '../engine/core/Engine';
+import { GameObject } from '../engine/core/GameObject';
+import { PrimitiveFactory } from '../engine/rendering/PrimitiveFactory';
+
+type Enemy = {
+  mesh: THREE.Mesh;
+  alive: boolean;
+};
+
+type Bullet = {
+  mesh: THREE.Mesh;
+  velocity: THREE.Vector3;
+  ttl: number;
+};
+
+export class DemoGame {
+  private readonly engine: Engine;
+  private readonly player: GameObject;
+  private readonly ground: THREE.Mesh;
+  private readonly enemies: Enemy[] = [];
+  private readonly bullets: Bullet[] = [];
+  private readonly arenaRadius = 11;
+  private readonly playerRadius = 0.8;
+  private score = 0;
+  private health = 100;
+  private lastShotTime = 0;
+  private hud: HTMLDivElement | null = null;
+  private scoreLabel: HTMLSpanElement | null = null;
+  private healthLabel: HTMLSpanElement | null = null;
+  private started = false;
+
+  constructor(engine: Engine) {
+    this.engine = engine;
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+    this.engine.scene.add(ambient);
+
+    const directional = new THREE.DirectionalLight(0xffffff, 1.2);
+    directional.position.set(8, 12, 6);
+    directional.castShadow = true;
+    directional.shadow.mapSize.set(1024, 1024);
+    this.engine.scene.add(directional);
+
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(50, 32, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0x081122,
+        side: THREE.BackSide,
+      }),
+    );
+    this.engine.scene.add(sky);
+
+    const arena = PrimitiveFactory.createPlane({ size: 34, color: 0x202a3f });
+    arena.rotation.x = -Math.PI / 2;
+    arena.receiveShadow = true;
+    this.ground = arena;
+    this.engine.scene.add(this.ground);
+
+    const boundaryMaterial = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.3, roughness: 0.7 });
+    const wallPositions = [
+      { x: 0, y: 1.5, z: -16, w: 34, h: 3, d: 1 },
+      { x: 0, y: 1.5, z: 16, w: 34, h: 3, d: 1 },
+      { x: -16, y: 1.5, z: 0, w: 1, h: 3, d: 34 },
+      { x: 16, y: 1.5, z: 0, w: 1, h: 3, d: 34 },
+    ];
+
+    for (const wall of wallPositions) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(wall.w, wall.h, wall.d), boundaryMaterial);
+      mesh.position.set(wall.x, wall.y, wall.z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.engine.scene.add(mesh);
+    }
+
+    this.player = new GameObject('Player');
+    const playerModel = PrimitiveFactory.createBox({ size: 1, color: 0x38bdf8 });
+    playerModel.castShadow = true;
+    this.player.root.add(playerModel);
+    this.player.root.position.set(0, 0.75, 0);
+    this.engine.scene.addGameObject(this.player);
+
+    for (let i = 0; i < 8; i += 1) {
+      this.spawnEnemy();
+    }
+
+    this.engine.addUpdateHandler(this.update);
+  }
+
+  load(): void {
+    this.hud = document.createElement('div');
+    this.hud.className = 'hud';
+    this.hud.innerHTML = `
+      <h1>Nebula3D</h1>
+      <div class="stats">
+        <span>Score: <strong id="nebula-score">0</strong></span>
+        <span>Health: <strong id="nebula-health">100</strong></span>
+      </div>
+    `;
+
+    this.scoreLabel = this.hud.querySelector('#nebula-score');
+    this.healthLabel = this.hud.querySelector('#nebula-health');
+    this.engine.container.appendChild(this.hud);
+
+    this.started = true;
+  }
+
+  private readonly update = (dt: number) => {
+    if (!this.started) {
+      return;
+    }
+
+    const moveDirection = new THREE.Vector3();
+    if (this.engine.input.isDown('w')) moveDirection.z -= 1;
+    if (this.engine.input.isDown('s')) moveDirection.z += 1;
+    if (this.engine.input.isDown('a')) moveDirection.x -= 1;
+    if (this.engine.input.isDown('d')) moveDirection.x += 1;
+
+    if (moveDirection.lengthSq() > 0) {
+      moveDirection.normalize().multiplyScalar(5.5 * dt);
+      this.player.root.position.x += moveDirection.x;
+      this.player.root.position.z += moveDirection.z;
+    }
+
+    this.player.root.position.x = THREE.MathUtils.clamp(this.player.root.position.x, -this.arenaRadius, this.arenaRadius);
+    this.player.root.position.z = THREE.MathUtils.clamp(this.player.root.position.z, -this.arenaRadius, this.arenaRadius);
+
+    if (this.engine.input.isPressed(' ')) {
+      this.fireBullet();
+    }
+
+    for (let i = this.bullets.length - 1; i >= 0; i -= 1) {
+      const bullet = this.bullets[i];
+      bullet.mesh.position.addScaledVector(bullet.velocity, dt);
+      bullet.ttl -= dt;
+
+      if (bullet.ttl <= 0) {
+        this.engine.scene.remove(bullet.mesh);
+        this.bullets.splice(i, 1);
+        continue;
+      }
+
+      for (let j = this.enemies.length - 1; j >= 0; j -= 1) {
+        const enemy = this.enemies[j];
+        if (!enemy.alive) continue;
+
+        if (enemy.mesh.position.distanceTo(bullet.mesh.position) < 0.9) {
+          this.engine.scene.remove(enemy.mesh);
+          enemy.alive = false;
+          this.enemies.splice(j, 1);
+          this.score += 10;
+          this.bullets.splice(i, 1);
+          this.spawnEnemy();
+          break;
+        }
+      }
+    }
+
+    for (const enemy of this.enemies) {
+      if (!enemy.alive) continue;
+
+      const toPlayer = new THREE.Vector3().subVectors(this.player.root.position, enemy.mesh.position);
+      const distance = toPlayer.length();
+      if (distance > 0.001) {
+        toPlayer.normalize().multiplyScalar(2.1 * dt);
+        enemy.mesh.position.add(toPlayer);
+      }
+
+      if (distance < 1.2) {
+        this.health = Math.max(0, this.health - 15 * dt);
+      }
+    }
+
+    if (this.health <= 0) {
+      this.health = 100;
+      this.score = 0;
+      this.resetArena();
+    }
+
+    this.updateHud();
+  };
+
+  private fireBullet(): void {
+    const now = performance.now();
+    if (now - this.lastShotTime < 180) {
+      return;
+    }
+
+    this.lastShotTime = now;
+
+    const bullet = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 14, 14),
+      new THREE.MeshStandardMaterial({
+        color: 0xfbbf24,
+        emissive: 0xfbbf24,
+        emissiveIntensity: 0.5,
+      }),
+    );
+
+    bullet.position.copy(this.player.root.position);
+    bullet.position.y = 0.8;
+    const direction = new THREE.Vector3(0, 0, -1);
+    direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.player.root.rotation.y);
+    bullet.position.add(direction.clone().multiplyScalar(0.7));
+
+    const velocity = direction.clone().multiplyScalar(12);
+    this.engine.scene.add(bullet);
+    this.bullets.push({ mesh: bullet, velocity, ttl: 1.6 });
+  }
+
+  private spawnEnemy(): void {
+    const enemyMesh = PrimitiveFactory.createSphere({ size: 0.7, color: 0xf43f5e });
+    enemyMesh.castShadow = true;
+
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 9 + Math.random() * 3.5;
+    enemyMesh.position.set(Math.cos(angle) * radius, 0.75, Math.sin(angle) * radius);
+
+    this.engine.scene.add(enemyMesh);
+    this.enemies.push({ mesh: enemyMesh, alive: true });
+  }
+
+  private resetArena(): void {
+    for (const enemy of this.enemies) {
+      if (enemy.alive) {
+        this.engine.scene.remove(enemy.mesh);
+      }
+    }
+
+    this.enemies.length = 0;
+    for (let i = 0; i < 8; i += 1) {
+      this.spawnEnemy();
+    }
+  }
+
+  private updateHud(): void {
+    if (this.scoreLabel) {
+      this.scoreLabel.textContent = String(this.score);
+    }
+
+    if (this.healthLabel) {
+      this.healthLabel.textContent = String(Math.max(0, Math.round(this.health)));
+    }
+  }
+}

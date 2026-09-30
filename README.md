@@ -2,17 +2,17 @@
 
 Nebula3D is a modular, open-source 3D web game engine framework built with TypeScript and Three.js. It is designed to help developers prototype and build complete browser-based 3D games with a clean architecture, reusable systems, and a production-ready project structure.
 
-## Highlights
+## Core features
 
-- WebGL-powered rendering via Three.js
+- WebGL rendering powered by Three.js
 - Scene, camera, and render loop management
 - ECS-inspired game object model
 - Input system for keyboard and mouse
-- Primitive factory for generated geometry
-- Component-based gameplay architecture
-- Physics hook layer for future extension
-- Sample playable demo scene
-- Open-source MIT license
+- Primitive creation helpers for rapid prototyping
+- Physics hook layer for future integration
+- Reusable gameplay architecture
+- Demo arena game with chasing enemies and shooting
+- MIT open-source license
 
 ## Quick start
 
@@ -21,7 +21,14 @@ npm install
 npm run dev -- --host
 ```
 
-Then open the local Vite URL in the browser.
+Then open the local Vite URL in your browser.
+
+## How to play the demo
+
+- Move: WASD
+- Fire: Space
+- Goal: survive as long as possible and destroy incoming enemies
+- Score increases each time you hit a target
 
 ## Project structure
 
@@ -35,20 +42,21 @@ src/
     rendering/
     utils/
   game/
+    DemoGame.ts
   main.ts
   style.css
 ```
 
-## Sample architecture
+## Architecture overview
 
-Nebula3D is intentionally designed as a developer-friendly framework:
+Nebula3D is intentionally built as a developer-friendly framework:
 
-- `Engine` owns timing, renderer, scene, and update loop
+- `Engine` manages the renderer, scene, camera, and update loop
 - `GameObject` is the base entity in the world
-- `Component` allows modular behavior injection
-- `InputManager` tracks keyboard and mouse state
-- `PrimitiveFactory` creates mesh data quickly
-- `PhysicsWorld` provides an extendable integration point for physics
+- `Component` provides modular behavior hooks
+- `InputManager` tracks keyboard and mouse interaction
+- `PrimitiveFactory` creates quick meshes for gameplay prototyping
+- `PhysicsWorld` acts as an extensible physics layer
 
 ## Example usage
 
